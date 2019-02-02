@@ -90,27 +90,20 @@ library(lubridate)
 
 class: center, middle, inverse
 
-# Use 'tidy simulation'
+# Create data-generating model
 
 ---
 
-# Tidy data is:
+$$
 
-# 1. one observation per row
-# 2. one variable per column
-# 3. one type of data per table
-
---
-
-## But variables can be 'list columns'
 
 ---
 
-# Simulate data from the assumed model
+# Perform planned analysis on simulated datasets
 
 ---
 
-# Spend a lot of time making good plots
+# Create great plots
 
 ---
 
