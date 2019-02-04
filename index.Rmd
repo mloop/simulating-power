@@ -214,7 +214,8 @@ class: center, middle, inverse
 ---
 # Advantages
 
-## * Correct power calculations for any model you can write down
-## * Compare statistal tests you are considering
-## * Identify issues with proposed data analysis
-## * Provide example figures to investigator
+##* Correct power calculations for any model you can write down
+##* Compare statistal tests you are considering
+##* Your assumptions are crystal clear
+##* Identify issues with proposed data analysis
+##* Provide example figures to investigator
