@@ -1,0 +1,144 @@
+---
+title: "Template for simulating a study"
+author: "Matthew Shane Loop, PhD"
+date: "`r Sys.Date()`"
+output: 
+  html_document: 
+    highlight: zenburn
+    theme: yeti
+---
+
+*You are free to reuse, change, and distribute this document. The MIT license applies.*
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rms)
+library(tidyverse)
+```
+
+# Introduction
+
+One of the most high-impact ways you can affect a study is helping to get a good design, and many people will be coming to you for help with that. But often the design isn't neat and tidy. There's no option in the sample size program to do that particular study design. Simulating a fake study can help you investigate the impact of sample size, collaborate with the investigator on sharpening the assumptions, and comparing different analysis strategies for a specific, finite dataset. This document details a simple example of using a basic linear function of a covariate in logistic regression versus using a restricted cubic spline, in a situation where the true relationship is non-linear.
+
+# Simulate the data
+
+I use the `tidyverse` in order to simulate data, particularly with `purrr` syntax, because there are some advantages to it that allow you to change things easily and compare those changes easily. This simulation also uses Frank Harrell's `rms` package for model fitting, instead of the standard `glm` function.
+
+```{r}
+set.seed(123)
+
+number_of_iterations <- 100
+simulated_data = tribble(
+  ~iteration,
+  seq(1, number_of_iterations, 1)
+) %>%
+  unnest(iteration) %>%
+  group_by(iteration) %>%
+  nest() %>%
+  mutate(
+    n = map_dbl(data, ~runif(1, 400, 600)),  # The sample size can be uncertain, based upon recruiting or dropout. Choosing sample size randomly can be an interesting way to incorporate your uncertainty about the final study results.
+    fake_data = map(n, ~tibble(   x_1 = runif(., 18, 45),  # What does the covariate(s) distribution look like?
+                                  x_2 = rnorm(., mean = 0, sd = 3),
+                                  log_odds = 0.1 - 1 * sin(x_1 * 0.25) + 0.1 * x_2,  # How does linear predictor depend upon covariate(s)?
+                                  id = seq(1, ., 1)) %>%
+                              group_by(id) %>%  # Need to group by ID in order to simulate a single random variable for each observation
+                              mutate(y = rbinom(1, size = 1, prob = arm::invlogit(log_odds)))
+    )
+  ) %>%
+  select(-data)
+```
+
+```{r}
+simulated_data$fake_data[[1]] %>%
+  ggplot(aes(x = x_1, y = log_odds)) +
+  geom_point()
+```
+
+
+# Fit models to the data
+
+* Compare a linear term for x_1 model to a restricted cubic spline model for x_1
+
+```{r}
+fits <- simulated_data %>%
+  mutate(
+    linear = map(fake_data, ~lrm(y ~ x_1 + x_2, data = .)),
+    splines = map(fake_data, ~lrm(y ~ rcs(x_1, 5) + x_2, data = .)),
+    anova_linear = map(linear, ~anova(.)),
+    anova_splines = map(splines, ~anova(.)),
+    p_value_linear = map_dbl(anova_linear, ~.[1, 3]),
+    p_value_splines = map_dbl(anova_splines, ~.[1, 3])
+)
+```
+
+# Compare models
+
+* What was the distribution of p-values for x_1?
+
+```{r}
+fits %>%
+  select(iteration, contains("p_val")) %>%
+  group_by(iteration) %>%
+  gather(method, p_value, -iteration) %>%
+  ggplot(aes(x = p_value)) +
+  geom_histogram() +
+  facet_wrap(~ method)
+```
+
+* What's the power for detecting an effect for x_1?
+
+```{r}
+fits %>%
+  select(iteration, contains("p_valu")) %>%
+  gather(method, p_value, -iteration) %>%
+  mutate(reject = if_else(p_value < 0.05, 1, 0)) %>%
+  group_by(method) %>%
+  summarise(power = mean(reject))
+```
+
+So, if we anticipate a sample size somewhere between 400 and 600 and a strong, but "J-shaped", relationship with the predictor, we will essentially be unable to detect any association with the outcome if we use a linear predictor. However, if we use a restricted cubic spline with 5 knots, we are more or less guaranteed to find an association *if it's as strong as we assume*.
+
+* What are other summaries, besides power, that are useful?
+
+Width of confidence interval for x_2:
+```{r}
+a = fits %>%
+  mutate(linear_x2_width = map_dbl(linear, ~summary(., x_1 = c(25, 30, 35), x_2 = c(0, 0, 1))["x_2", c("Lower 0.95", "Upper 0.95")] %>% 
+                              diff() %>% 
+                              abs()),
+         splines_x2_width = map_dbl(splines, ~summary(., x_1 = c(25, 30, 35), x_2 = c(0, 0, 1))["x_2", c("Lower 0.95", "Upper 0.95")] %>% 
+                              diff() %>% 
+                              abs())
+         )
+
+a %>%
+  select(iteration, contains("width")) %>%
+  gather(method, width, -iteration) %>%
+  ggplot(aes(x = width)) +
+  geom_histogram(aes(fill = method)) +
+  labs(
+    title = "Histograms of widths of 95% confidence interval for x_2",
+    subtitle = "Assuming variable sample sizes from 400 to 600"
+  )
+```
+
+How does that width depend upon sample size?
+```{r}
+a %>%
+  select(iteration, n, contains("width")) %>%
+  gather(method, width, -iteration, -n) %>%
+  ggplot(aes(x = n, y = width, group = method)) +
+  geom_point(aes(color = method)) +
+  geom_smooth(method = "lm") +
+  labs(
+    title = "Scatterplot of widths of 95% confidence interval for x_2 vs sample size"
+  )
+```
+
+# Exercise
+
+Now your collaborator wants to include a variable `x_3`, which is correlated with `x_2`. For example, let's say `x_2` is systolic blood pressure and `x_3` is diastolic blood pressure. Assuming that `x_3` has about 20% of the impact on `y` as `x_2`. Change the simulation in way that would help a collaborator understand the impact of including `x_3`. Is it worth it? Is it not? Under what conditions?
+
+After performing your simulation, come up with 3 descriptions of the impact of this change on the fitted model *that is not power*.
+
+What are other reasonable modifications a collaborator might want to make? What are other things you may want to account for?
