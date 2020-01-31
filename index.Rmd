@@ -189,6 +189,7 @@ class: center, middle, inverse
 * Probability you select exactly the correct model
 * Distance from the truth (aka, 'How wrong do you want to be?')
 * Probability you over estimate the effect by a factor of 2
+* How often does algorithm fail?
 
 ---
 # Possible summaries
